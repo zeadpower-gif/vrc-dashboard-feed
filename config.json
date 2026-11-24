@@ -1,0 +1,42 @@
+{
+  "cities": [
+    {"name": "札幌", "lat": 43.06, "lon": 141.35},
+    {"name": "仙台", "lat": 38.27, "lon": 140.87},
+    {"name": "東京", "lat": 35.69, "lon": 139.69},
+    {"name": "横浜", "lat": 35.44, "lon": 139.64},
+    {"name": "名古屋", "lat": 35.18, "lon": 136.91},
+    {"name": "京都", "lat": 35.01, "lon": 135.77},
+    {"name": "大阪", "lat": 34.69, "lon": 135.50},
+    {"name": "広島", "lat": 34.39, "lon": 132.46},
+    {"name": "福岡", "lat": 33.59, "lon": 130.40},
+    {"name": "那覇", "lat": 26.21, "lon": 127.68}
+  ],
+  "my_cities": [
+    {"name": "京都市", "lat": 35.0116, "lon": 135.7681}
+  ],
+  "yahoo": [
+    {"name": "主要", "url": "https://news.yahoo.co.jp/rss/topics/top-picks.xml"},
+    {"name": "国内", "url": "https://news.yahoo.co.jp/rss/topics/domestic.xml"},
+    {"name": "国際", "url": "https://news.yahoo.co.jp/rss/topics/world.xml"},
+    {"name": "経済", "url": "https://news.yahoo.co.jp/rss/topics/business.xml"},
+    {"name": "エンタメ", "url": "https://news.yahoo.co.jp/rss/topics/entertainment.xml"},
+    {"name": "IT", "url": "https://news.yahoo.co.jp/rss/topics/it.xml"}
+  ],
+  "vrc_news": [
+    {"name": "Mogura VR", "url": "https://www.moguravr.com/feed/", "filter": "VRChat|バーチャル|メタバース|アバター"},
+    {"name": "VRChat", "url": "https://hello.vrchat.com/blog?format=rss", "filter": ""}
+  ],
+  "booth": {
+    "avatar":  "3Dキャラクター",
+    "outfit":  "3D衣装",
+    "world":   "3D環境・ワールド",
+    "gimmick": "3Dツール・システム"
+  },
+  "booth_hours": 12,
+  "booth_per_category": 12,
+  "min_quality": 3,
+  "min_likes": 0,
+  "items_per_list": 10,
+  "gemini_models": ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.6-flash"],
+  "ai_sale_search": true
+}
