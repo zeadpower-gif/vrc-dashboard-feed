@@ -244,14 +244,28 @@ def gemini(prompt, schema=None, search=False, parts=None):
             body["generationConfig"]["responseSchema"] = schema
     for model in CFG.get("gemini_models", ["gemini-flash-latest"]):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        try:
-            r = requests.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                              json=body, timeout=120)
-        except Exception as e:
-            log("Gemini", model, e)
+        r = None
+        for attempt in range(3):          # 混んでいる時（503・429）は少し待ってやり直す
+            try:
+                r = requests.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                                  json=body, timeout=120)
+            except Exception as e:
+                log("Gemini", model, e)
+                r = None
+            if r is not None and r.status_code in (429, 500, 503) and attempt < 2:
+                wait = 15 * (attempt + 1)
+                log("Gemini", model, r.status_code, f"混んでいるので {wait} 秒待ってやり直し")
+                time.sleep(wait)
+                continue
+            break
+        if r is None:
             continue
         if r.status_code != 200:
-            log("Gemini", model, r.status_code, r.text[:300])
+            try:
+                msg = r.json()["error"]["message"][:120]
+            except Exception:
+                msg = r.text[:120]
+            log("Gemini", model, r.status_code, msg)
             continue
         try:
             parts = r.json()["candidates"][0]["content"]["parts"]
