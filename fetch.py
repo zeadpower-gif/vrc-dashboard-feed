@@ -231,9 +231,12 @@ SALE_WORDS = r"セール|SALE|sale|％OFF|%OFF|%off|割引|値下げ|半額|期�
 
 
 # ───────────────────────── Gemini ─────────────────────────
+GEMINI_DOWN = [False]   # 全部のモデルが混んでいた時は、この回はもう呼ばない（無料枠を無駄にしない）
+
+
 def gemini(prompt, schema=None, search=False, parts=None):
     key = os.environ.get("GEMINI_API_KEY", "")
-    if not key:
+    if not key or GEMINI_DOWN[0]:
         return None
     body = {"contents": [{"role": "user", "parts": (parts or []) + [{"text": prompt}]}]}
     if search:
@@ -274,6 +277,8 @@ def gemini(prompt, schema=None, search=False, parts=None):
             return json.loads(m.group(0) if m else text)
         except Exception as e:
             log("Gemini parse", model, e)
+    GEMINI_DOWN[0] = True
+    log("Gemini：どのモデルも使えなかったので、この回は AI を使わずに続けます（次の回でやり直し）")
     return None
 
 
