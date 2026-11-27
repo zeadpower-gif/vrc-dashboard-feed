@@ -24,7 +24,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; vrc-dashboard-feed/1.0; +https://g
 GENRES = ["avatar", "outfit", "world", "gimmick"]
 
 CFG = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
-S = {"slots": 24, "cols": 6, "cell": 256, "days": 3, "min_quality": CFG.get("min_quality", 3),
+S = {"slots": 20, "cols": 5, "cell": 400, "days": 3, "min_quality": CFG.get("min_quality", 3),
      "drop_min_pct": 15, "max_avatars": 3}
 S.update(CFG.get("showcase", {}))
 
@@ -226,24 +226,42 @@ def pick_booth(now_m):
     return out
 
 
+def big_candidates(url):
+    """サムネイルの URL から、もっと大きい元画像の URL の候補を作る（だめなら元のサムネイルを使う）
+    例：https://booth.pximg.net/c/300x300_a2_g5/<id>/i/<商品>/<画像>_base_resized.jpg
+      → https://booth.pximg.net/<id>/i/<商品>/<画像>.jpg（.png）"""
+    out = []
+    m = re.match(r"(https://booth\.pximg\.net)/c/[^/]+/(.+?)(?:_base_resized)?\.(\w+)$", url or "")
+    if m:
+        out += [f"{m.group(1)}/{m.group(2)}.jpg", f"{m.group(1)}/{m.group(2)}.png"]
+    if url:
+        out.append(url)
+    return out
+
+
 def build_atlas(items):
     """先頭から slots 件のサムネイルを 1 枚の画像にまとめる。各商品に slot（何番目のマス。なければ -1）を付ける"""
     from PIL import Image
     cols, cell, slots = S["cols"], S["cell"], S["slots"]
     rows = (slots + cols - 1) // cols
     atlas = Image.new("RGB", (cols * cell, rows * cell), (24, 26, 38))
-    n = 0
+    n = big = 0
     for it in items:
         it["slot"] = -1
         if n >= slots or not it["thumb"]:
             continue
-        r = get(it["thumb"], headers=dict(UA, Referer="https://booth.pm/"))
-        if r is None:
-            continue
-        try:
-            im = Image.open(io.BytesIO(r.content)).convert("RGB")
-        except Exception as e:
-            log("thumb", e)
+        im = None
+        for u in big_candidates(it["thumb"]):
+            try:
+                rr = requests.get(u, headers=dict(UA, Referer="https://booth.pm/"), timeout=25)
+                if rr.status_code == 200 and len(rr.content) < 15_000_000:
+                    im = Image.open(io.BytesIO(rr.content)).convert("RGB")
+                    if u != it["thumb"]:
+                        big += 1
+                    break
+            except Exception as e:
+                log("thumb", e)
+        if im is None:
             continue
         w, h = im.size   # 真ん中を正方形に切り抜いて縮める
         side = min(w, h)
@@ -253,7 +271,7 @@ def build_atlas(items):
         it["slot"] = n
         n += 1
     atlas.save(ATLAS, "JPEG", quality=85, optimize=True)
-    log(f"atlas：{n} 枚 → {ATLAS}")
+    log(f"atlas：{n} 枚（うち大きい元画像 {big} 枚）→ {ATLAS} {cols * cell}x{rows * cell}")
     return {"cols": cols, "rows": rows}
 
 
