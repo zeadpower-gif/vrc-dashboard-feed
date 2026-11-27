@@ -164,6 +164,23 @@ def rss(url, limit=10, pattern=""):
 
 
 # ───────────────────────── BOOTH の目玉商品（D1 から） ─────────────────────────
+KEEP = set("★☆♪♡♥")
+
+
+def clean(s):
+    """フォントにない絵文字・記号を消す（ワールドでは □ になってしまうため）"""
+    out = []
+    for ch in str(s or ""):
+        o = ord(ch)
+        if ch in KEEP:
+            out.append(ch)
+        elif o > 0xFFFF or o in (0xFE0F, 0x200D) or 0x2600 <= o <= 0x27BF or 0x2B00 <= o <= 0x2BFF:
+            continue
+        else:
+            out.append(ch)
+    return re.sub(r"\s{2,}", " ", "".join(out)).strip()
+
+
 def yen(p):
     return "無料" if p == 0 else f"¥{p:,}"
 
@@ -199,9 +216,9 @@ def pick_booth(now_m):
             continue
         av = json.loads(r["avatars"] or "[]")
         av_text = "・".join(av[:S["max_avatars"]]) + (f" ほか{len(av) - S['max_avatars']}体" if len(av) > S["max_avatars"] else "")
-        out.append({"id": r["id"], "t": (r["name"] or "")[:80], "s": (r["shop"] or "")[:30], "g": r["genre"],
+        out.append({"id": r["id"], "t": clean(r["name"])[:80], "s": clean(r["shop"])[:30], "g": r["genre"],
                     "p": yen(r["price"]) + ("〜" if r["price_varies"] else ""), "old": yen(top) if off else "",
-                    "off": off, "k": k, "sum": r["sum"] or "", "av": av_text, "m": r["first_seen"],
+                    "off": off, "k": k, "sum": clean(r["sum"]), "av": clean(av_text), "m": r["first_seen"],
                     "q": r["q"], "l": r["likes"] or 0, "thumb": r["thumb_url"] or ""})
     # 値下げ（割引が大きい順）→ 品質 → いいね → 新しい順
     out.sort(key=lambda x: (x["k"] != "SALE", -x["off"], -x["q"], -x["l"], -x["m"]))
@@ -265,7 +282,7 @@ def main():
     news = []
     for src in CFG.get("vrc_news", []):
         for it in rss(src["url"], n, src.get("filter", "")):
-            news.append({"t": it["t"][:70], "s": src["name"], "sum": it["desc"][:60], "m": it["m"], "k": "NEWS"})
+            news.append({"t": clean(it["t"])[:70], "s": src["name"], "sum": clean(it["desc"])[:60], "m": it["m"], "k": "NEWS"})
     news = [x for x in news if x["m"] >= now_m - CFG.get("news_days", 14) * 1440]   # 古いニュースは出さない
     news.sort(key=lambda x: -x["m"])
     log("news", len(news))
