@@ -1,17 +1,16 @@
-# VRChat ワールドのダッシュボード用データを集めて docs/feed.json に書き出す
-#   天気（Open-Meteo）・VRChat ニュース（RSS）・BOOTH の新着とセール
-#   （一般ニュースの Yahoo!ニュースは、利用規約で公開アプリに使えないため削除した）
-#   BOOTH とニュースは Gemini で「アバター／衣装／ワールド／ギミック」「新作／セール」に分けて、ひとこと要約を付ける
-#   GEMINI_API_KEY が無い・失敗した時は、カテゴリとタイトルの言葉だけで分ける
-import hashlib
-import base64
+# VRChat ワールドのインフォボード用データを集めて docs/ に書き出す
+#   docs/feed.json        … 天気（Open-Meteo）・VRChat ニュース（RSS）・BOOTH の目玉商品（D1 から）
+#   docs/booth_atlas.jpg  … BOOTH の目玉商品のサムネイルを 1 枚にまとめたタイル画像（ワールドが 1 回で読める）
+#
+# BOOTH の商品は collect.py / classify.py が D1 に入れたもの（Claude の判定つき）から選ぶ。
+# D1 の設定（CF_* の環境変数）がない時は、BOOTH の部分は空になる。
 import html
+import io
 import json
 import os
 import re
 import sys
 import time
-import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 
@@ -20,11 +19,14 @@ import requests
 JST = timezone(timedelta(hours=9))
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "docs", "feed.json")
-CACHE = os.path.join(ROOT, "docs", "ai_cache.json")
+ATLAS = os.path.join(ROOT, "docs", "booth_atlas.jpg")
 UA = {"User-Agent": "Mozilla/5.0 (compatible; vrc-dashboard-feed/1.0; +https://github.com/)"}
 GENRES = ["avatar", "outfit", "world", "gimmick"]
 
 CFG = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
+S = {"slots": 24, "cols": 6, "cell": 256, "days": 3, "min_quality": CFG.get("min_quality", 3),
+     "drop_min_pct": 15, "max_avatars": 3}
+S.update(CFG.get("showcase", {}))
 
 
 def log(*a):
@@ -38,7 +40,7 @@ def epoch_min(dt):
 def get(url, **kw):
     for i in range(3):
         try:
-            r = requests.get(url, headers=UA, timeout=25, **kw)
+            r = requests.get(url, headers=kw.pop("headers", UA), timeout=25, **kw)
             if r.status_code == 200:
                 return r
             log("HTTP", r.status_code, url)
@@ -116,7 +118,7 @@ def weather():
     return out
 
 
-# ───────────────────────── RSS ─────────────────────────
+# ───────────────────────── VRChat ニュース（RSS） ─────────────────────────
 def parse_date(s):
     from email.utils import parsedate_to_datetime
     try:
@@ -142,6 +144,7 @@ def rss(url, limit=10, pattern=""):
     for it in root.iter():
         if not it.tag.endswith("item") and not it.tag.endswith("entry"):
             continue
+
         def f(name):
             for ch in it:
                 if ch.tag.split("}")[-1] == name:
@@ -149,223 +152,99 @@ def rss(url, limit=10, pattern=""):
             return ""
         title = html.unescape(f("title"))
         cats = " ".join((ch.text or "") for ch in it if ch.tag.split("}")[-1] == "category")
-        if pattern and not re.search(pattern, title + " " + cats + " " + f("description"), re.I):
+        desc = re.sub(r"\s+", " ", re.sub("<[^>]+>", "", html.unescape(f("description")))).strip()
+        if pattern and not re.search(pattern, title + " " + cats + " " + desc, re.I):
             continue
         dt = parse_date(f("pubDate") or f("published") or f("updated"))
-        items.append({"t": title, "url": f("link"), "m": epoch_min(dt), "desc": re.sub("<[^>]+>", "", html.unescape(f("description")))[:200]})
+        items.append({"t": title, "m": epoch_min(dt), "desc": desc})
         if len(items) >= limit:
             break
     return items
 
 
-# ───────────────────────── BOOTH ─────────────────────────
-def booth_list(category, keyword=""):
-    q = {"sort": "new", "tags[]": "VRChat"}
-    if keyword:
-        q["q"] = keyword
-    url = f"https://booth.pm/ja/browse/{urllib.parse.quote(category)}?" + urllib.parse.urlencode(q)
-    r = get(url)
-    if r is None:
-        return []
-    page = r.text
-    items, seen = [], set()
-    # 商品カード（data-product-*）を読む
-    for m in re.finditer(r"<li[^>]*data-product-id=\"(\d+)\"[^>]*>", page):
-        tag = m.group(0)
-        pid = m.group(1)
-        if pid in seen:
-            continue
-        seen.add(pid)
-        def attr(n):
-            a = re.search(n + r"=\"([^\"]*)\"", tag)
-            return html.unescape(a.group(1)) if a else ""
-        items.append({"id": pid, "t": attr("data-product-name"), "p": attr("data-product-price"),
-                      "s": attr("data-product-brand"), "cat": attr("data-product-category")})
-    if not items:   # 形が変わっていた時：商品ページへのリンクだけ拾って、商品ごとの JSON を読む
-        for pid in dict.fromkeys(re.findall(r"/items/(\d+)", page)):
-            items.append({"id": pid})
-    return items[: CFG.get("booth_per_category", 12)]
-
-
-def booth_detail(it):
-    """商品ごとの JSON から、いいね数・説明・サムネイルを読む（クオリティの判定に使う）"""
-    r = get(f"https://booth.pm/ja/items/{it['id']}.json")
-    if r is not None:
-        try:
-            j = r.json()
-            it["t"] = it.get("t") or j.get("name", "")
-            it["p"] = it.get("p") or j.get("price", "")
-            it["s"] = it.get("s") or (j.get("shop") or {}).get("name", "")
-            it["desc"] = re.sub(r"\s+", " ", j.get("description") or "")[:400]
-            it["dlen"] = len(j.get("description") or "")
-            it["likes"] = int(j.get("wish_lists_count") or 0)
-            it["nimg"] = len(j.get("images") or [])
-            imgs = j.get("images") or []
-            if imgs:
-                it["img"] = imgs[0].get("resized") or imgs[0].get("original") or ""
-        except Exception as e:
-            log("booth json", it["id"], e)
-    time.sleep(1)
-    return it
-
-
-def thumb(url):
-    """サムネイルを小さく読み込む（AI に見た目を判定してもらう）"""
-    if not url:
-        return None
-    try:
-        r = requests.get(url, headers=dict(UA, Referer="https://booth.pm/"), timeout=20)
-        if r.status_code == 200 and len(r.content) < 1_500_000:
-            mime = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
-            return {"inline_data": {"mime_type": mime, "data": base64.b64encode(r.content).decode()}}
-    except Exception as e:
-        log("thumb", e)
-    return None
-
-
+# ───────────────────────── BOOTH の目玉商品（D1 から） ─────────────────────────
 def yen(p):
-    digits = re.sub(r"[^\d]", "", str(p))
-    return f"¥{int(digits):,}" if digits else str(p)
+    return "無料" if p == 0 else f"¥{p:,}"
 
 
-SALE_WORDS = r"セール|SALE|sale|％OFF|%OFF|%off|割引|値下げ|半額|期間限定価格|ブラックフライデー"
+def pick_booth(now_m):
+    """D1 から最近の新作・値下げを選ぶ。返り値：選んだ商品のリスト（よい順）"""
+    if not os.environ.get("CF_API_TOKEN", "").strip():
+        log("booth：D1 の設定がないので、BOOTH は空にします")
+        return []
+    from db import D1
+    db = D1()
+    since = now_m - S["days"] * 1440
+    rows = db.q(
+        "SELECT i.id, i.name, i.shop, i.thumb_url, i.price_varies, i.src, i.first_seen, i.likes, "
+        "ai.genre, ai.q, ai.sum, ai.avatars, ai.kind, "
+        "(SELECT price FROM prices p WHERE p.item_id = i.id ORDER BY seen_at DESC LIMIT 1) AS price, "
+        "(SELECT MAX(price) FROM prices p WHERE p.item_id = i.id AND p.seen_at >= ?) AS top "
+        "FROM items i JOIN ai ON ai.item_id = i.id "
+        "WHERE i.adult = 0 AND ai.q >= ? AND ai.genre IN ('avatar','outfit','world','gimmick') AND i.last_seen >= ?",
+        [now_m - 30 * 1440, S["min_quality"], since])
+    out = []
+    for r in rows:
+        if r["price"] is None:
+            continue
+        top = r["top"] or r["price"]
+        off = round((1 - r["price"] / top) * 100) if top > 0 and r["price"] < top else 0
+        is_new = r["src"] == "new" and r["first_seen"] >= since
+        if off >= S["drop_min_pct"] or (is_new and r["kind"] == "sale"):
+            k = "SALE"
+        elif is_new:
+            k = "NEW"
+        else:
+            continue
+        av = json.loads(r["avatars"] or "[]")
+        av_text = "・".join(av[:S["max_avatars"]]) + (f" ほか{len(av) - S['max_avatars']}体" if len(av) > S["max_avatars"] else "")
+        out.append({"id": r["id"], "t": (r["name"] or "")[:80], "s": (r["shop"] or "")[:30], "g": r["genre"],
+                    "p": yen(r["price"]) + ("〜" if r["price_varies"] else ""), "old": yen(top) if off else "",
+                    "off": off, "k": k, "sum": r["sum"] or "", "av": av_text, "m": r["first_seen"],
+                    "q": r["q"], "l": r["likes"] or 0, "thumb": r["thumb_url"] or ""})
+    # 値下げ（割引が大きい順）→ 品質 → いいね → 新しい順
+    out.sort(key=lambda x: (x["k"] != "SALE", -x["off"], -x["q"], -x["l"], -x["m"]))
+    log(f"booth：候補 {len(out)} 件")
+    return out
 
 
-# ───────────────────────── Gemini ─────────────────────────
-GEMINI_DOWN = [False]   # 全部のモデルが混んでいた時は、この回はもう呼ばない（無料枠を無駄にしない）
-
-
-def gemini(prompt, schema=None, search=False, parts=None):
-    key = os.environ.get("GEMINI_API_KEY", "")
-    if not key or GEMINI_DOWN[0]:
-        return None
-    body = {"contents": [{"role": "user", "parts": (parts or []) + [{"text": prompt}]}]}
-    if search:
-        body["tools"] = [{"google_search": {}}]
-    else:
-        body["generationConfig"] = {"responseMimeType": "application/json"}
-        if schema:
-            body["generationConfig"]["responseSchema"] = schema
-    for model in CFG.get("gemini_models", ["gemini-flash-latest"]):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        r = None
-        for attempt in range(3):          # 混んでいる時（503・429）は少し待ってやり直す
-            try:
-                r = requests.post(url, headers={"x-goog-api-key": key, "Content-Type": "application/json"},
-                                  json=body, timeout=120)
-            except Exception as e:
-                log("Gemini", model, e)
-                r = None
-            if r is not None and r.status_code in (429, 500, 503) and attempt < 2:
-                wait = 15 * (attempt + 1)
-                log("Gemini", model, r.status_code, f"混んでいるので {wait} 秒待ってやり直し")
-                time.sleep(wait)
-                continue
-            break
+def build_atlas(items):
+    """先頭から slots 件のサムネイルを 1 枚の画像にまとめる。各商品に slot（何番目のマス。なければ -1）を付ける"""
+    from PIL import Image
+    cols, cell, slots = S["cols"], S["cell"], S["slots"]
+    rows = (slots + cols - 1) // cols
+    atlas = Image.new("RGB", (cols * cell, rows * cell), (24, 26, 38))
+    n = 0
+    for it in items:
+        it["slot"] = -1
+        if n >= slots or not it["thumb"]:
+            continue
+        r = get(it["thumb"], headers=dict(UA, Referer="https://booth.pm/"))
         if r is None:
             continue
-        if r.status_code != 200:
-            try:
-                msg = r.json()["error"]["message"][:120]
-            except Exception:
-                msg = r.text[:120]
-            log("Gemini", model, r.status_code, msg)
-            continue
         try:
-            parts = r.json()["candidates"][0]["content"]["parts"]
-            text = "".join(p.get("text", "") for p in parts)
-            m = re.search(r"[\[{].*[\]}]", text, re.S)
-            return json.loads(m.group(0) if m else text)
+            im = Image.open(io.BytesIO(r.content)).convert("RGB")
         except Exception as e:
-            log("Gemini parse", model, e)
-    GEMINI_DOWN[0] = True
-    log("Gemini：どのモデルも使えなかったので、この回は AI を使わずに続けます（次の回でやり直し）")
-    return None
-
-
-CLASSIFY_SCHEMA = {
-    "type": "ARRAY",
-    "items": {"type": "OBJECT", "properties": {
-        "id": {"type": "STRING"},
-        "genre": {"type": "STRING", "enum": ["avatar", "outfit", "world", "gimmick", "other"]},
-        "kind": {"type": "STRING", "enum": ["new", "sale"]},
-        "sum": {"type": "STRING"},
-        "q": {"type": "INTEGER"},
-    }, "required": ["id", "genre", "kind", "sum", "q"]},
-}
-
-
-def heuristic_q(it):
-    """AI が使えない時のクオリティ（いいね数・説明の長さ・画像の枚数から 1〜5）"""
-    q = 2
-    likes = it.get("likes", 0)
-    q += (likes >= 20) + (likes >= 100)
-    q += it.get("dlen", 0) >= 400 or it.get("nimg", 0) >= 4
-    return min(5, q)
-
-
-def classify(items, cache):
-    todo = [it for it in items if it["key"] not in cache]
-    for i in range(0, len(todo), 15):           # 画像つきなので 15 件ずつ
-        batch = todo[i:i + 15]
-        parts = []
-        for it in batch:
-            info = {"id": it["key"], "title": it["t"], "shop": it.get("s", ""), "category": it.get("cat", ""),
-                    "price": it.get("p", ""), "likes": it.get("likes"), "images": it.get("nimg"),
-                    "hint": it.get("hint", ""), "desc": it.get("desc", "")[:300]}
-            parts.append({"text": json.dumps(info, ensure_ascii=False)})
-            im = thumb(it.get("img", ""))
-            if im:
-                parts.append({"text": f"↑ id={it['key']} のサムネイル："})
-                parts.append(im)
-        prompt = (
-            "上は VRChat 向けの BOOTH 商品とニュースの一覧です（商品にはサムネイル画像が付いています）。"
-            "それぞれについて次を JSON 配列で返してください。\n"
-            "- genre: avatar（アバター本体）/ outfit（衣装・髪・アクセサリー）/ world（ワールド・ワールド用アセット）/ "
-            "gimmick（ギミック・ツール・シェーダー・システム）/ other\n"
-            "- kind: セール・割引・期間限定価格なら sale、それ以外は new\n"
-            "- sum: 日本語で20文字以内のひとこと紹介（対応アバターや特徴など。絵文字なし）\n"
-            "- q: クオリティ 1〜5。サムネイルの見た目の完成度（解像度・ライティング・作り込み）、説明の丁寧さ（対応アバター・"
-            "導入方法・利用規約）、価格とのつり合い、いいね数で判断。ニュースは 5。\n"
-            "  1〜2 の例：粗い・低解像度・ほぼ説明なし・明らかな流用や生成画像だけ・VRChat と関係ない・テスト出品\n")
-        res = gemini(prompt, CLASSIFY_SCHEMA, parts=parts)
-        if isinstance(res, list):
-            for r_ in res:
-                if isinstance(r_, dict) and "id" in r_:
-                    cache[r_["id"]] = {"genre": r_.get("genre", "other"), "kind": r_.get("kind", "new"),
-                                       "sum": (r_.get("sum") or "")[:24], "q": int(r_.get("q") or 3)}
-    for it in items:
-        c = cache.get(it["key"])
-        if c:
-            it.update(c)
-        else:   # AI が使えない時
-            it["genre"] = it.get("hint_genre", "other")
-            it["kind"] = "sale" if re.search(SALE_WORDS, it["t"] + it.get("desc", "")) else "new"
-            it["sum"] = ""
-            it["q"] = 5 if it["key"].startswith("n") else heuristic_q(it)
-
-
-def ai_sale_search():
-    """Gemini の Google 検索で、今やっている VRChat 関連のセールを探す（BOOTH の一覧で拾えないもの用）"""
-    prompt = (
-        "今日は" + datetime.now(JST).strftime("%Y年%m月%d日") + "です。現在開催中の VRChat 向けアバター・衣装・ワールド・"
-        "ギミックの BOOTH セール情報を Google 検索で調べ、確実に開催中のものだけを最大12件、次の形式の JSON 配列だけで答えてください。"
-        "[{\"genre\":\"avatar|outfit|world|gimmick\",\"t\":\"商品名\",\"s\":\"ショップ名\",\"p\":\"セール価格（分かれば）\","
-        "\"sum\":\"20文字以内（割引率や期限など）\",\"url\":\"情報元URL\"}]")
-    res = gemini(prompt, search=True)
-    out = []
-    if isinstance(res, list):
-        for r_ in res:
-            if isinstance(r_, dict) and r_.get("t") and r_.get("genre") in GENRES:
-                out.append({"t": r_["t"][:60], "s": r_.get("s", "")[:30], "p": r_.get("p", ""), "k": "SALE",
-                            "sum": r_.get("sum", "")[:24], "m": epoch_min(datetime.now(timezone.utc)),
-                            "genre": r_["genre"], "src": "AI検索"})
-    return out
+            log("thumb", e)
+            continue
+        w, h = im.size   # 真ん中を正方形に切り抜いて縮める
+        side = min(w, h)
+        im = im.crop(((w - side) // 2, (h - side) // 2, (w - side) // 2 + side, (h - side) // 2 + side))
+        im = im.resize((cell, cell), Image.LANCZOS)
+        atlas.paste(im, ((n % cols) * cell, (n // cols) * cell))
+        it["slot"] = n
+        n += 1
+    atlas.save(ATLAS, "JPEG", quality=85, optimize=True)
+    log(f"atlas：{n} 枚 → {ATLAS}")
+    return {"cols": cols, "rows": rows}
 
 
 # ───────────────────────── まとめ ─────────────────────────
 def main():
-    feed = {"updated": datetime.now(JST).strftime("%m/%d %H:%M"), "now": epoch_min(datetime.now(timezone.utc))}
+    now = datetime.now(timezone.utc)
+    now_m = epoch_min(now)
+    feed = {"updated": datetime.now(JST).strftime("%m/%d %H:%M"), "now": now_m}
+
     feed["weather"] = weather()
     if not feed["weather"] and os.path.exists(OUT):   # 天気が取れなかった時は前回の天気を残す
         try:
@@ -376,86 +255,33 @@ def main():
     log("weather", len(feed["weather"]))
 
     n = CFG.get("items_per_list", 10)
-
-    cache = {}
-    if os.path.exists(CACHE):
-        try:
-            cache = json.load(open(CACHE, encoding="utf-8"))
-        except Exception:
-            cache = {}
-
-    # BOOTH（カテゴリ別の新着＋「セール」で検索した新着）。見に行くのは booth_hours ごと（それ以外は前回の結果を使う）
-    now_m = epoch_min(datetime.now(timezone.utc))
-    last_b = cache.get("_booth", {})
-    if now_m - last_b.get("m", 0) >= CFG.get("booth_hours", 12) * 60 - 5:
-        booth = []
-        for g, cat in CFG["booth"].items():
-            for kw, hint in (("", "new"), ("セール", "sale")):
-                for it in booth_list(cat, kw):
-                    it = booth_detail(it)
-                    if not it.get("t"):
-                        continue
-                    it["key"] = "b" + it["id"] + ("s" if hint == "sale" else "")
-                    it["hint"] = "「セール」で検索して見つかった" if hint == "sale" else ""
-                    it["hint_genre"] = g
-                    it["m"] = now_m
-                    booth.append(it)
-                time.sleep(2)
-        if booth:
-            last_b = {"m": now_m, "items": booth}
-        log("booth fetched", len(booth))
-    else:
-        log("booth cached", len(last_b.get("items", [])))
-    booth = last_b.get("items", [])
-    cache["_booth"] = last_b
-
-    # VRChat ニュース
     news = []
     for src in CFG.get("vrc_news", []):
         for it in rss(src["url"], n, src.get("filter", "")):
-            it["key"] = "n" + hashlib.md5((it["url"] or it["t"]).encode()).hexdigest()[:10]
-            it["s"] = src["name"]
-            news.append(it)
+            news.append({"t": it["t"][:70], "s": src["name"], "sum": it["desc"][:60], "m": it["m"], "k": "NEWS"})
     news.sort(key=lambda x: -x["m"])
     log("news", len(news))
 
-    classify(booth + news, cache)
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    try:
+        booth = pick_booth(now_m)
+    except Exception as e:
+        log("booth：D1 から読めませんでした", e)
+        booth = []
+    shown = booth[: S["slots"]]
+    if shown:
+        feed["atlas"] = build_atlas(shown)
+    feed["booth"] = [{k: v for k, v in it.items() if k not in ("thumb", "id", "q", "l")} for it in shown]
 
+    # 前のパネル（ジャンル別タブ）用。新しいパネルでは使わない
     vrc = {g: [] for g in GENRES}
-    seen = set()
-    min_q, min_likes = CFG.get("min_quality", 3), CFG.get("min_likes", 0)
-    dropped = 0
     for it in booth:
-        g = it.get("genre", "other")
-        if g not in vrc or it["id"] + g in seen:
-            continue
-        if it.get("q", 3) < min_q or it.get("likes", 0) < min_likes:   # クオリティが低いものははねる
-            dropped += 1
-            continue
-        seen.add(it["id"] + g)
-        vrc[g].append({"t": it["t"][:60], "s": it.get("s", "")[:30], "p": yen(it.get("p", "")),
-                       "k": "SALE" if it.get("kind") == "sale" else "NEW", "sum": it.get("sum", ""), "m": it["m"],
-                       "q": it.get("q", 3), "l": it.get("likes", 0)})
-    log("booth dropped (low quality)", dropped)
-    if CFG.get("ai_sale_search"):   # Google 検索つきの AI は 6 時間に1回だけ（無料枠の節約）
-        last = cache.get("_sale_search", {})
-        if now_m - last.get("m", 0) > 6 * 60:
-            found = ai_sale_search()
-            if found:
-                last = {"m": now_m, "items": found}
-        for it in last.get("items", []):
-            it = dict(it)
-            vrc[it.pop("genre")].append(it)
-        cache["_sale_search"] = last
-    for g in GENRES:   # セールを先に、そのあと新着
-        vrc[g] = sorted(vrc[g], key=lambda x: (x["k"] != "SALE", -x.get("q", 3), -x.get("l", 0)))[: n * 2]
-    vrc["news"] = [{"t": it["t"][:70], "s": it["s"], "sum": it.get("sum", ""), "m": it["m"], "k": "NEWS"} for it in news[:n]]
+        if len(vrc[it["g"]]) < n * 2:
+            vrc[it["g"]].append({"t": it["t"][:60], "s": it["s"], "p": it["p"], "k": it["k"], "sum": it["sum"],
+                                 "m": it["m"], "q": it["q"], "l": it["l"]})
+    vrc["news"] = news[:n]
     feed["vrc"] = vrc
 
-    # キャッシュは最近使ったものだけ残す
-    keep = {it["key"] for it in booth + news} | {"_sale_search", "_booth"}
-    json.dump({k: v for k, v in cache.items() if k in keep}, open(CACHE, "w", encoding="utf-8"), ensure_ascii=False)
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
     json.dump(feed, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     log("wrote", OUT, os.path.getsize(OUT), "bytes")
 
