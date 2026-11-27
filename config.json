@@ -62,27 +62,11 @@
     {
       "name": "Mogura VR",
       "url": "https://www.moguravr.com/feed/",
-      "filter": "VRChat|バーチャル|メタバース|アバター"
-    },
-    {
-      "name": "VRChat",
-      "url": "https://hello.vrchat.com/blog?format=rss",
-      "filter": ""
+      "filter": "VRChat|VRC"
     }
   ],
-  "booth": {
-    "avatar": "3Dキャラクター",
-    "outfit": "3D衣装",
-    "world": "3D環境・ワールド",
-    "gimmick": "3Dツール・システム"
-  },
-  "booth_hours": 12,
-  "booth_per_category": 12,
   "min_quality": 3,
-  "min_likes": 0,
   "items_per_list": 10,
-  "gemini_models": [],
-  "ai_sale_search": false,
   "collect": {
     "hours": 2,
     "new_max_pages": 5,
@@ -155,5 +139,15 @@
     "since_hours": 48,
     "max_per_run": 10,
     "username": "BOOTH 新作・セール速報"
-  }
+  },
+  "pages_url": "https://zeadpower-gif.github.io/vrc-dashboard-feed/",
+  "showcase": {
+    "slots": 24,
+    "cols": 6,
+    "cell": 256,
+    "days": 3,
+    "drop_min_pct": 15,
+    "max_avatars": 3
+  },
+  "news_days": 14
 }

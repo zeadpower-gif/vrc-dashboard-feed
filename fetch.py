@@ -38,9 +38,10 @@ def epoch_min(dt):
 
 
 def get(url, **kw):
+    headers = kw.pop("headers", UA)
     for i in range(3):
         try:
-            r = requests.get(url, headers=kw.pop("headers", UA), timeout=25, **kw)
+            r = requests.get(url, headers=headers, timeout=25, **kw)
             if r.status_code == 200:
                 return r
             log("HTTP", r.status_code, url)
@@ -246,9 +247,11 @@ def main():
     feed = {"updated": datetime.now(JST).strftime("%m/%d %H:%M"), "now": now_m}
 
     feed["weather"] = weather()
-    if not feed["weather"] and os.path.exists(OUT):   # 天気が取れなかった時は前回の天気を残す
+    if not feed["weather"]:   # 天気が取れなかった時は、公開中の feed.json の天気を残す
+        r = get(CFG.get("pages_url", "").rstrip("/") + "/feed.json") if CFG.get("pages_url") else None
         try:
-            feed["weather"] = json.load(open(OUT, encoding="utf-8")).get("weather", [])
+            prev = r.json() if r is not None else json.load(open(OUT, encoding="utf-8"))
+            feed["weather"] = prev.get("weather", [])
             log("weather：取れなかったので前回の天気を使います")
         except Exception:
             pass
@@ -259,6 +262,7 @@ def main():
     for src in CFG.get("vrc_news", []):
         for it in rss(src["url"], n, src.get("filter", "")):
             news.append({"t": it["t"][:70], "s": src["name"], "sum": it["desc"][:60], "m": it["m"], "k": "NEWS"})
+    news = [x for x in news if x["m"] >= now_m - CFG.get("news_days", 14) * 1440]   # 古いニュースは出さない
     news.sort(key=lambda x: -x["m"])
     log("news", len(news))
 
