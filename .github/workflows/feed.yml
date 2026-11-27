@@ -8,54 +8,57 @@ on:
         description: "collect.py に渡す（--force で時間に関係なく実行、--dry-run で読み取りの確認だけ）"
         required: false
         default: ""
+      notify_args:
+        description: "notify.py に渡す（--backfill マリシア で、そのアバターの対応商品をまだ流していないもの全部流す）"
+        required: false
+        default: ""
 permissions:
-  contents: write
+  contents: read
+  pages: write          # GitHub Pages に直接公開する（docs をコミットしないのでリポジトリが太らない）
+  id-token: write
 concurrency:
   group: feed
   cancel-in-progress: false
 jobs:
   feed:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+      CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install requests
-      - name: collect（BOOTH の商品と値段を D1 に記録。6 時間ごと）
+      - run: pip install requests pillow
+      - name: collect（BOOTH の商品と値段を D1 に記録。2 時間ごと）
         run: python collect.py $COLLECT_ARGS
-        continue-on-error: true          # ここが失敗しても feed.json は今まで通り作る
+        continue-on-error: true          # ここが失敗しても feed.json は作る
         env:
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           COLLECT_ARGS: ${{ github.event.inputs.collect_args }}
       - name: classify（まだ判定していない商品を Claude で判定）
         run: python classify.py
         continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       - name: notify（見張っているアバター対応の新作と値下げを Discord に流す）
-        run: python notify.py
+        run: python notify.py $NOTIFY_ARGS
         continue-on-error: true
         env:
+          NOTIFY_ARGS: ${{ github.event.inputs.notify_args }}
           DISCORD_WEBHOOK_TEST: ${{ secrets.DISCORD_WEBHOOK_TEST }}
           DISCORD_WEBHOOK_OUTFIT: ${{ secrets.DISCORD_WEBHOOK_OUTFIT }}
           DISCORD_WEBHOOK_HARUKA: ${{ secrets.DISCORD_WEBHOOK_HARUKA }}
           DISCORD_WEBHOOK_KANATA: ${{ secrets.DISCORD_WEBHOOK_KANATA }}
           DISCORD_WEBHOOK_MARYCIA: ${{ secrets.DISCORD_WEBHOOK_MARYCIA }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      - run: python fetch.py
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      - name: commit
-        run: |
-          git config user.name "feed-bot"
-          git config user.email "feed-bot@users.noreply.github.com"
-          git add docs
-          git diff --cached --quiet || (git commit -m "update feed" && git push)
+      - name: fetch（feed.json とサムネイルのタイル画像を作る）
+        run: python fetch.py
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4
