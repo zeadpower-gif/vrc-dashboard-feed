@@ -1,0 +1,56 @@
+{
+  "cities": [
+    {"name": "札幌", "lat": 43.06, "lon": 141.35},
+    {"name": "仙台", "lat": 38.27, "lon": 140.87},
+    {"name": "東京", "lat": 35.69, "lon": 139.69},
+    {"name": "横浜", "lat": 35.44, "lon": 139.64},
+    {"name": "名古屋", "lat": 35.18, "lon": 136.91},
+    {"name": "京都", "lat": 35.01, "lon": 135.77},
+    {"name": "大阪", "lat": 34.69, "lon": 135.50},
+    {"name": "広島", "lat": 34.39, "lon": 132.46},
+    {"name": "福岡", "lat": 33.59, "lon": 130.40},
+    {"name": "那覇", "lat": 26.21, "lon": 127.68}
+  ],
+  "my_cities": [
+    {"name": "京都市", "lat": 35.0116, "lon": 135.7681}
+  ],
+  "vrc_news": [
+    {"name": "Mogura VR", "url": "https://www.moguravr.com/feed/", "filter": "VRChat|バーチャル|メタバース|アバター"},
+    {"name": "VRChat", "url": "https://hello.vrchat.com/blog?format=rss", "filter": ""}
+  ],
+  "booth": {
+    "avatar":  "3Dキャラクター",
+    "outfit":  "3D衣装",
+    "world":   "3D環境・ワールド",
+    "gimmick": "3Dツール・システム"
+  },
+  "booth_hours": 12,
+  "booth_per_category": 12,
+  "min_quality": 3,
+  "min_likes": 0,
+  "items_per_list": 10,
+  "gemini_models": [],
+  "ai_sale_search": false,
+  "collect": {
+    "hours": 6,
+    "new_max_pages": 5,
+    "known_streak": 15,
+    "sale_words": ["セール", "SALE", "OFF"],
+    "sale_max_pages": 2,
+    "details_per_run": 150,
+    "page_wait": 2,
+    "item_wait": 1
+  },
+  "ai": {
+    "model": "claude-haiku-5-5",
+    "per_run": 150,
+    "batch": 15
+  },
+  "notify": {
+    "avatars": {"haruka": ["はるか", "Haruka"], "kanata": ["彼方", "Kanata"], "yuuri": ["悠莉", "Yuuri"]},
+    "drop_min_pct": 15,
+    "since_hours": 48,
+    "max_per_run": 10,
+    "username": "BOOTH 新作・セール速報"
+  }
+}
