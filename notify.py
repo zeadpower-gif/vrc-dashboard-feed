@@ -2,6 +2,8 @@
 #
 #   python notify.py            いつもの実行
 #   python notify.py --dry-run  流す予定のものを表示するだけ（Discord には送らない・記録もしない）
+#   python notify.py --backfill マリシア
+#       そのアバターの対応商品を、見つけた時期に関係なく、まだ流していないものを全部流す（1 回に 100 件まで）
 #
 # 見張るアバターと流す先は config.json の notify.targets に書く。1 つのアバターにつき：
 #   name      … 投稿の「対応」欄に出す名前
@@ -28,6 +30,10 @@ N = {"targets": [], "drop_min_pct": 15, "drop_days": 30, "since_hours": 48, "max
      "username": "BOOTH 新作・セール速報"}
 N.update(CFG.get("notify", {}))
 TARGETS = N["targets"]
+BACKFILL = sys.argv[sys.argv.index("--backfill") + 1] if "--backfill" in sys.argv[:-1] else ""
+if BACKFILL:
+    TARGETS = [tg for tg in TARGETS if tg["name"] == BACKFILL]
+    N["max_per_run"] = 100
 
 
 def log(*a):
@@ -118,7 +124,8 @@ def send(url, payload):
 def main():
     dry = "--dry-run" in sys.argv
     if not TARGETS:
-        log("config.json の notify.targets が空なので、何もしません")
+        log(f"見張るアバターがありません（--backfill の名前「{BACKFILL}」が notify.targets の name と同じか確認してください）"
+            if BACKFILL else "config.json の notify.targets が空なので、何もしません")
         return
     test_url = os.environ.get("DISCORD_WEBHOOK_TEST", "").strip()
     envs = {tg.get(p) for tg in TARGETS for p in ("body", "head", "other") if tg.get(p)}
@@ -142,7 +149,7 @@ def main():
         "SELECT i.id, i.name, i.shop, i.thumb_url, i.price_varies, i.src, i.first_seen, i.descr, "
         "ai.avatars, ai.fit, ai.sum FROM items i JOIN ai ON ai.item_id = i.id "
         f"WHERE i.adult = 0 AND i.last_seen >= ? AND ({' OR '.join(conds)})",
-        [t - max(N["since_hours"], 6 * 24) * 60] + params)
+        [0 if BACKFILL else t - max(N["since_hours"], 6 * 24) * 60] + params)
     if not rows:
         log("流す候補はありません")
         return
@@ -165,8 +172,8 @@ def main():
         if not rt:
             continue
         top = max(x["price"] for x in h)
-        is_new = it["src"] == "new" and it["first_seen"] >= t - N["since_hours"] * 60
-        is_drop = top > 0 and price < top and (1 - price / top) * 100 >= N["drop_min_pct"]
+        is_new = BACKFILL or (it["src"] == "new" and it["first_seen"] >= t - N["since_hours"] * 60)
+        is_drop = not BACKFILL and top > 0 and price < top and (1 - price / top) * 100 >= N["drop_min_pct"]
         for env, names in rt.items():
             if is_new and not any(d[0] == it["id"] and d[1] == "new" and d[3] == env for d in done):
                 queue.append((it["first_seen"], it, "new", price, None, names, avatars, env))
