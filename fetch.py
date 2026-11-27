@@ -246,7 +246,11 @@ def main():
     now_m = epoch_min(now)
     feed = {"updated": datetime.now(JST).strftime("%m/%d %H:%M"), "now": now_m}
 
-    feed["weather"] = weather()
+    try:
+        feed["weather"] = weather()
+    except Exception as e:   # Open-Meteo が混んでいて変な返事が来た時など。止めずに前回の天気を使う
+        log("weather：読めませんでした", repr(e)[:200])
+        feed["weather"] = []
     if not feed["weather"]:   # 天気が取れなかった時は、公開中の feed.json の天気を残す
         r = get(CFG.get("pages_url", "").rstrip("/") + "/feed.json") if CFG.get("pages_url") else None
         try:
