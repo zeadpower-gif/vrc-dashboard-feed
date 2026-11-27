@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 
 import requests
+from urllib.parse import urlparse
 
 JST = timezone(timedelta(hours=9))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,7 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; vrc-dashboard-feed/1.0; +https://g
 GENRES = ["avatar", "outfit", "world", "gimmick"]
 
 CFG = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
-S = {"slots": 20, "cols": 5, "cell": 400, "days": 3, "min_quality": CFG.get("min_quality", 3),
+S = {"slots": 12, "cols": 4, "cell": 512, "days": 3, "min_quality": CFG.get("min_quality", 3),
      "drop_min_pct": 15, "max_avatars": 3}
 S.update(CFG.get("showcase", {}))
 
@@ -161,6 +162,51 @@ def rss(url, limit=10, pattern=""):
         if len(items) >= limit:
             break
     return items
+
+
+# ───────────────────────── ジャンル別ニュース（はてブ人気エントリー・Google トレンド急上昇・VRChat） ─────────────────────────
+def jp_count(n):
+    """200000 → 20万"""
+    if n >= 10000:
+        v = n / 10000
+        return (f"{v:.0f}" if v >= 10 or v == int(v) else f"{v:.1f}") + "万"
+    return f"{n:,}"
+
+
+def news_tab(tab, now_m, limit):
+    """config.json の news_tabs の 1 つ分。[{t: 見出し, s: 出どころなど, m: 分}]"""
+    if tab.get("kind") == "vrc":
+        return None   # VRChat ニュースは別に集めたものを入れる
+    r = get(tab["url"])
+    if r is None:
+        return []
+    try:
+        root = ET.fromstring(r.content)
+    except ET.ParseError as e:
+        log("news parse", e, tab["url"])
+        return []
+    out = []
+    for it in root.iter():
+        if it.tag.split("}")[-1] != "item":
+            continue
+        kids = {}
+        for ch in it:
+            kids.setdefault(ch.tag.split("}")[-1], (ch.text or "").strip())
+        title = clean(html.unescape(kids.get("title", "")))
+        if not title:
+            continue
+        m = epoch_min(parse_date(kids.get("date") or kids.get("pubDate") or ""))
+        if tab.get("kind") == "trends":
+            n = int(re.sub(r"[^0-9]", "", kids.get("approx_traffic", "")) or 0)
+            sub = f"検索数 {jp_count(n)}+" if n else ""
+        else:
+            host = re.sub(r"^www\.", "", urlparse(kids.get("link", "")).netloc)
+            cnt = kids.get("bookmarkcount", "")
+            sub = (f"{cnt} users  ·  " if cnt else "") + host
+        out.append({"t": title[:80], "s": sub, "m": m})
+        if len(out) >= limit:
+            break
+    return out
 
 
 # ───────────────────────── BOOTH の目玉商品（D1 から） ─────────────────────────
@@ -304,6 +350,27 @@ def main():
     news = [x for x in news if x["m"] >= now_m - CFG.get("news_days", 14) * 1440]   # 古いニュースは出さない
     news.sort(key=lambda x: -x["m"])
     log("news", len(news))
+
+    # ジャンル別ニュース（タブ）。取れなかったタブは、公開中の feed.json の分を残す
+    tabs = []
+    prev_tabs = {}
+    for tab in CFG.get("news_tabs", []):
+        items = news_tab(tab, now_m, CFG.get("news_per_tab", 8))
+        if items is None:
+            items = [{"t": x["t"], "s": x["s"], "m": x["m"]} for x in news[: CFG.get("news_per_tab", 8)]]
+        if not items:
+            if not prev_tabs and CFG.get("pages_url"):
+                try:
+                    pr = get(CFG["pages_url"].rstrip("/") + "/feed.json")
+                    prev_tabs = {t["name"]: t["items"] for t in (pr.json().get("news", []) if pr is not None else [])}
+                except Exception:
+                    prev_tabs = {"-": []}
+            items = prev_tabs.get(tab["name"], [])
+            log("news tab：取れなかったので前回の分を使います", tab["name"])
+        tabs.append({"name": tab["name"], "credit": tab.get("credit", ""), "items": items})
+        log("news tab", tab["name"], len(items))
+        time.sleep(1)
+    feed["news"] = tabs
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     try:

@@ -142,12 +142,46 @@
   },
   "pages_url": "https://zeadpower-gif.github.io/vrc-dashboard-feed/",
   "showcase": {
-    "slots": 20,
-    "cols": 5,
-    "cell": 400,
+    "slots": 12,
+    "cols": 4,
+    "cell": 512,
     "days": 3,
     "drop_min_pct": 15,
     "max_avatars": 3
   },
-  "news_days": 14
+  "news_days": 14,
+  "news_per_tab": 8,
+  "news_tabs": [
+    {
+      "name": "話題",
+      "url": "https://b.hatena.ne.jp/hotentry.rss",
+      "credit": "はてなブックマーク 人気エントリー"
+    },
+    {
+      "name": "急上昇",
+      "url": "https://trends.google.com/trending/rss?geo=JP",
+      "kind": "trends",
+      "credit": "データソース: Google トレンド"
+    },
+    {
+      "name": "世の中",
+      "url": "https://b.hatena.ne.jp/hotentry/social.rss",
+      "credit": "はてなブックマーク 人気エントリー"
+    },
+    {
+      "name": "テック",
+      "url": "https://b.hatena.ne.jp/hotentry/it.rss",
+      "credit": "はてなブックマーク 人気エントリー"
+    },
+    {
+      "name": "ゲーム・アニメ",
+      "url": "https://b.hatena.ne.jp/hotentry/game.rss",
+      "credit": "はてなブックマーク 人気エントリー"
+    },
+    {
+      "name": "VR",
+      "kind": "vrc",
+      "credit": "Mogura VR"
+    }
+  ]
 }
