@@ -103,14 +103,18 @@ def ask(items):
     body = {"model": A["model"], "max_tokens": 4000, "tools": [TOOL],
             "tool_choice": {"type": "tool", "name": "record_items"},
             "messages": [{"role": "user", "content": content}]}
-    headers = {"x-api-key": os.environ.get("ANTHROPIC_API_KEY", ""), "anthropic-version": "2023-06-01",
+    # キーは貼った時の改行・空白を消して使う
+    headers = {"x-api-key": os.environ.get("ANTHROPIC_API_KEY", "").strip(), "anthropic-version": "2023-06-01",
                "content-type": "application/json"}
     for attempt in range(3):
         try:
             r = requests.post(API, headers=headers, json=body, timeout=180)
-        except Exception as e:
-            log("Claude", e)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            log("Claude 接続エラー", e)
             r = None
+        except Exception as e:                 # キーの形がおかしい など。やり直しても直らない
+            log("Claude", e)
+            return None, 0, 0
         if r is not None and r.status_code == 200:
             j = r.json()
             u = j.get("usage") or {}
@@ -123,7 +127,7 @@ def ask(items):
             log("Claude", r.status_code, r.text[:300])
             return None, 0, 0
         wait = 20 * (attempt + 1)
-        log("Claude", r.status_code if r is not None else "接続エラー", f"混んでいるので {wait} 秒待ってやり直し")
+        log("Claude", r.status_code if r is not None else "接続エラー", f"{wait} 秒待ってやり直し")
         time.sleep(wait)
     return None, 0, 0
 

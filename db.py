@@ -10,9 +10,9 @@ MAX_PARAMS = 90   # D1 は 1 回の問い合わせに ? を 100 個までしか�
 
 class D1:
     def __init__(self):
-        acc = os.environ.get("CF_ACCOUNT_ID", "")
-        dbid = os.environ.get("CF_D1_DATABASE_ID", "")
-        token = os.environ.get("CF_API_TOKEN", "")
+        acc = os.environ.get("CF_ACCOUNT_ID", "").strip()
+        dbid = os.environ.get("CF_D1_DATABASE_ID", "").strip()
+        token = os.environ.get("CF_API_TOKEN", "").strip()
         if not (acc and dbid and token):
             raise RuntimeError("CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_API_TOKEN が設定されていません")
         self.url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/d1/database/{dbid}/query"
