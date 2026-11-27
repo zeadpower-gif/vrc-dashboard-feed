@@ -29,7 +29,7 @@
   "min_quality": 3,
   "min_likes": 0,
   "items_per_list": 10,
-  "gemini_models": [""],
+  "gemini_models": [],
   "ai_sale_search": false,
   "collect": {
     "hours": 6,
@@ -45,5 +45,12 @@
     "model": "claude-haiku-5-5",
     "per_run": 150,
     "batch": 15
+  },
+  "notify": {
+    "avatars": {"haruka": ["はるか", "Haruka"], "kanata": ["彼方", "Kanata"], "yuuri": ["悠莉", "Yuuri"]},
+    "drop_min_pct": 15,
+    "since_hours": 48,
+    "max_per_run": 10,
+    "username": "BOOTH 新作・セール速報"
   }
 }
