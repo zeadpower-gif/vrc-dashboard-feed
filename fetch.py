@@ -1,6 +1,5 @@
 # VRChat ワールドのダッシュボード用データを集めて docs/feed.json に書き出す
-#   天気（Open-Meteo）・VRChat ニュース（RSS）・BOOTH の新着とセール
-#   （一般ニュースの Yahoo!ニュースは、利用規約で公開アプリに使えないため削除した）
+#   天気（Open-Meteo）・Yahoo!ニュース（RSS）・VRChat ニュース（RSS）・BOOTH の新着とセール
 #   BOOTH とニュースは Gemini で「アバター／衣装／ワールド／ギミック」「新作／セール」に分けて、ひとこと要約を付ける
 #   GEMINI_API_KEY が無い・失敗した時は、カテゴリとタイトルの言葉だけで分ける
 import hashlib
@@ -370,6 +369,11 @@ def main():
     log("weather", len(feed["weather"]))
 
     n = CFG.get("items_per_list", 10)
+    feed["yahoo"] = []
+    for y in CFG["yahoo"]:
+        its = rss(y["url"], n)
+        feed["yahoo"].append({"name": y["name"], "items": [{"t": i["t"], "m": i["m"]} for i in its]})
+    log("yahoo", sum(len(y["items"]) for y in feed["yahoo"]))
 
     cache = {}
     if os.path.exists(CACHE):

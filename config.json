@@ -14,6 +14,14 @@
   "my_cities": [
     {"name": "京都市", "lat": 35.0116, "lon": 135.7681}
   ],
+  "yahoo": [
+    {"name": "主要", "url": "https://news.yahoo.co.jp/rss/topics/top-picks.xml"},
+    {"name": "国内", "url": "https://news.yahoo.co.jp/rss/topics/domestic.xml"},
+    {"name": "国際", "url": "https://news.yahoo.co.jp/rss/topics/world.xml"},
+    {"name": "経済", "url": "https://news.yahoo.co.jp/rss/topics/business.xml"},
+    {"name": "エンタメ", "url": "https://news.yahoo.co.jp/rss/topics/entertainment.xml"},
+    {"name": "IT", "url": "https://news.yahoo.co.jp/rss/topics/it.xml"}
+  ],
   "vrc_news": [
     {"name": "Mogura VR", "url": "https://www.moguravr.com/feed/", "filter": "VRChat|バーチャル|メタバース|アバター"},
     {"name": "VRChat", "url": "https://hello.vrchat.com/blog?format=rss", "filter": ""}
@@ -30,15 +38,5 @@
   "min_likes": 0,
   "items_per_list": 10,
   "gemini_models": ["gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"],
-  "ai_sale_search": true,
-  "collect": {
-    "hours": 6,
-    "new_max_pages": 5,
-    "known_streak": 15,
-    "sale_words": ["セール", "SALE", "OFF"],
-    "sale_max_pages": 2,
-    "details_per_run": 150,
-    "page_wait": 2,
-    "item_wait": 1
-  }
+  "ai_sale_search": true
 }
