@@ -2,7 +2,12 @@ name: update-feed
 on:
   schedule:
     - cron: "17 * * * *"     # 1時間ごと（UTC）
-  workflow_dispatch: {}        # Actions の画面から手動でも動かせる
+  workflow_dispatch:            # Actions の画面から手動でも動かせる
+    inputs:
+      collect_args:
+        description: "collect.py に渡す（--force で時間に関係なく実行、--dry-run で読み取りの確認だけ）"
+        required: false
+        default: ""
 permissions:
   contents: write
 concurrency:
@@ -17,6 +22,22 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests
+      - name: collect（BOOTH の商品と値段を D1 に記録。6 時間ごと）
+        run: python collect.py $COLLECT_ARGS
+        continue-on-error: true          # ここが失敗しても feed.json は今まで通り作る
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          COLLECT_ARGS: ${{ github.event.inputs.collect_args }}
+      - name: classify（まだ判定していない商品を Claude で判定）
+        run: python classify.py
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       - run: python fetch.py
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
