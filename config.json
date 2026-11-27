@@ -84,7 +84,7 @@
   "gemini_models": [],
   "ai_sale_search": false,
   "collect": {
-    "hours": 6,
+    "hours": 2,
     "new_max_pages": 5,
     "known_streak": 15,
     "sale_words": [
