@@ -133,6 +133,20 @@
         "body": "DISCORD_WEBHOOK_MARYCIA",
         "head": "DISCORD_WEBHOOK_MARYCIA",
         "other": "DISCORD_WEBHOOK_MARYCIA"
+      },
+      {
+        "name": "くうた",
+        "aliases": [
+          "くうた",
+          "くぅた",
+          "Kuuta"
+        ],
+        "booth_ids": [
+          "4897493"
+        ],
+        "body": "DISCORD_WEBHOOK_KUUTA",
+        "head": "DISCORD_WEBHOOK_KUUTA",
+        "other": "DISCORD_WEBHOOK_KUUTA"
       }
     ],
     "drop_min_pct": 15,
