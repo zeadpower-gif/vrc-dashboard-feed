@@ -195,6 +195,8 @@ def news_tab(tab, now_m, limit):
         title = clean(html.unescape(kids.get("title", "")))
         if not title:
             continue
+        if tab.get("filter") and not re.search(tab["filter"], title, re.I):
+            continue   # 検索結果に混じる関係ない記事を外す
         m = epoch_min(parse_date(kids.get("date") or kids.get("pubDate") or ""))
         if tab.get("kind") == "trends":
             n = int(re.sub(r"[^0-9]", "", kids.get("approx_traffic", "")) or 0)

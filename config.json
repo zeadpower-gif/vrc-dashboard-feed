@@ -179,9 +179,10 @@
       "credit": "はてなブックマーク 人気エントリー"
     },
     {
-      "name": "VR",
-      "kind": "vrc",
-      "credit": "Mogura VR"
+      "name": "VRChat",
+      "url": "https://b.hatena.ne.jp/q/VRChat?target=all&sort=recent&users=3&mode=rss",
+      "credit": "はてなブックマーク",
+      "filter": "VRChat|VRC|バーチャル|メタバース|VTuber|アバター|\\bVR\\b"
     }
   ]
 }
